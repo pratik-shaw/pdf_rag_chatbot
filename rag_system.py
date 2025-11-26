@@ -9,6 +9,23 @@ import faiss
 import numpy as np
 from typing import List, Dict, Any, Optional
 import logging
+
+# FIX: Add httpx compatibility patch BEFORE importing OpenAI
+import httpx
+from openai._base_client import SyncHttpxClientWrapper
+
+# Monkey-patch to fix httpx 0.28.0 compatibility
+original_init = SyncHttpxClientWrapper.__init__
+
+def patched_init(self, *args, **kwargs):
+    """Patched init that removes unsupported httpx arguments."""
+    kwargs.pop('proxies', None)  # Remove unsupported proxies argument
+    kwargs.pop('limits', None)   # Also remove limits if present
+    original_init(self, *args, **kwargs)
+
+SyncHttpxClientWrapper.__init__ = patched_init
+
+# NOW import OpenAI after patching
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -51,8 +68,12 @@ class RAGSystem:
         self.text_splitter = TextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         self.embedding_generator = EmbeddingGenerator()
         
-        # Initialize OpenAI client
-        self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        # Initialize OpenAI client with error handling
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        
+        self.openai_client = OpenAI(api_key=api_key)
         
         # Vector store components
         self.index = None
